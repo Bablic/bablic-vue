@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "tsc": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^4.9.5",
+    "vue": "^2.7.14",
+    "vue-i18n": "^8.28.2"
+  },
+  "dependencies": {}
+}
