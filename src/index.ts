@@ -21,21 +21,39 @@ interface ReportItem {
  * Global variables
  */
 let g_siteId: string = null;
-let g_ns: string = null;
+let g_fetchSourceLanguageTranslations = false;
 let g_isDebug = false;
 let g_withNs = false;
 let g_isInEditor = false;
 let g_onEditorLoad: Array<Function> = null;
 
+export interface BablicVueOptions {
+    fetchSourceLanguageTranslations?: boolean;
+    useSingleTranslationFile?: boolean;
+    debug?: boolean;
+}
 /**
  * Init Bablic I18n with site id
  * @param siteId
  * @param isEditor - true if this is the editor
+ * @param options
  */
-export function init(siteId: string, isEditor = false): void {
+export function init(siteId: string, isEditor = false, options: BablicVueOptions = {
+    fetchSourceLanguageTranslations: false,
+    useSingleTranslationFile: false,
+    debug: false,
+}): void {
+    if (g_siteId && g_siteId !== siteId) {
+        throw new Error("Bablic I18n already initialized with a different site id");
+    }
     g_siteId = siteId;
+    g_fetchSourceLanguageTranslations = options.fetchSourceLanguageTranslations;
+    g_withNs = !options.useSingleTranslationFile;
     // if loading editor for the first time
     if (isEditor && !g_isInEditor) {
+        if (bablic && bablic.Site && bablic.Site.id !== siteId) {
+            throw new Error("Bablic I18n already initialized with a different site id");
+        }
         // load the editor code
         g_onEditorLoad = [];
         const s = document.createElement("script");
@@ -91,14 +109,15 @@ async function loadTranslations(language: string, namespace: string = null,
  * @param key
  * @param vm
  * @param vars
+ * @param ns
  */
-export function missing(locale: string, key: string, vm: any, vars: any): string {
+export function missing(locale: string, key: string, vm: any, vars: any, ns: string = null): string {
     if (g_isInEditor) {
         // if in editor, just preprocess and let editor do the work
-        return bablic.preprocessI18nItem(null, key, key);
+        return bablic.preprocessI18nItem(ns, key, key);
     }
     // if not in editor, add the missing item to the bulk
-    const item: ReportItem = {key, ns: null, vars};
+    const item: ReportItem = {key, ns, vars};
     bulk.push(item);
     // set the flush timeout
     clearTimeout(_timeout);
@@ -106,6 +125,14 @@ export function missing(locale: string, key: string, vm: any, vars: any): string
     return key;
 }
 
+/**
+ * Missing handler for a specific namespace
+ * @param ns
+ */
+export function missingForNamespace(ns: string) {
+    return (locale: string, key: string, vm: any, vars: any) => missing(locale, key, vm, vars, ns);
+
+}
 /**
  * Flushes the bulk of missing items
  */
@@ -164,12 +191,17 @@ export async function routerBeforeEach(i18n: VueI18n, lang: string, ns: string =
     }
     // load translation file
     if (!(key in loadedMessages)) {
-        const defaultMessages = i18n.getLocaleMessage(getFallbackLocale(i18n));
-        try {
-            loadedMessages[key] = await loadTranslations(lang, ns, defaultMessages);
-        } catch (e) {
-            console.error("Failed to load translations", e);
+        const sourceLocale = getFallbackLocale(i18n);
+        const defaultMessages = i18n.getLocaleMessage(sourceLocale);
+        if (lang === sourceLocale && !g_fetchSourceLanguageTranslations) {
             loadedMessages[key] = defaultMessages;
+        } else {
+            try {
+                loadedMessages[key] = await loadTranslations(lang, ns, defaultMessages);
+            } catch (e) {
+                console.error("Failed to load translations", e);
+                loadedMessages[key] = defaultMessages;
+            }
         }
     }
     setI18nLanguage(i18n, lang);
